@@ -4,33 +4,26 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
   
-  const amazonKey = process.env.RAINFOREST_API_KEY;
+  const rakutenId = process.env.RAKUTEN_APP_ID;
+  const yahooId = process.env.YAHOO_CLIENT_ID;
 
-  if (!query) return NextResponse.json({ error: 'キーワードがありません' });
-  if (!amazonKey) return NextResponse.json({ error: 'APIキーが設定されていません' });
+  if (!query) return NextResponse.json({ error: 'キーワードを入力してください' });
 
   try {
-    // 最もシンプルな検索URL（余計なパラメータを削除）
-    const url = `https://api.rainforestapi.com/request?api_key=${amazonKey}&type=search&amazon_domain=amazon.co.jp&search_term=${encodeURIComponent(query)}`;
-    
-    const res = await fetch(url);
-    const data = await res.json();
+    // 楽天とYahooのAPIを同時に叩く
+    const [rakutenRes, yahooRes] = await Promise.all([
+      fetch(`https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706?applicationId=${rakutenId}&keyword=${encodeURIComponent(query)}&hits=6&sort=%2BitemPrice`)
+        .then(res => res.json()).catch(() => ({})),
+      fetch(`https://shopping.yahoo.co.jp/ShoppingApi/V3/itemSearch?appid=${yahooId}&query=${encodeURIComponent(query)}&results=6`)
+        .then(res => res.json()).catch(() => ({}))
+    ]);
 
-    // デバッグ用：何が返ってきたかVercelのログに表示
-    console.log("Rainforest API Response Success:", data.request_info?.success);
-    console.log("Results Count:", data.search_results?.length);
-
-    // API側がエラーを返している場合
-    if (data.request_info?.success === false) {
-      return NextResponse.json({ error: data.request_info.message });
-    }
-
+    // データを整理して返す
     return NextResponse.json({
-      amazonResults: data.search_results || [],
-      rakutenResults: [],
-      yahooResults: []
+      rakuten: rakutenRes.Items || [],
+      yahoo: yahooRes.hits || []
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: '通信エラーが発生しました' });
+  } catch (error) {
+    return NextResponse.json({ error: 'データ取得に失敗しました' }, { status: 500 });
   }
 }
